@@ -33,8 +33,8 @@ from models import (
 logger = logging.getLogger(__name__)
 
 class MHMDWorkflowTool(BaseTool):
-    name = "mhmd_workflow_tool"
-    description = "Executes the MHMD preference workflow. Use this to toggle, opt-in, or opt-out a user. You can optionally provide a name and email. If an email is not provided but is required, a random one will be generated."
+    name: str = "mhmd_workflow_tool"
+    description: str = "Executes the MHMD preference workflow. Use this to toggle, opt-in, or opt-out a user. You can optionally provide a name and email. If an email is not provided but is required, a random one will be generated."
     args_schema: type[BaseModel] = MHMDWorkflowInput
     service: 'BrowserAutomationService'
 
@@ -280,7 +280,7 @@ class BrowserAutomationService:
                 "message": f"Failed to get current MHMD preference: {str(e)}"
             }
     
-    async def execute_combined_mhmd_swagger_workflow(self, base_url_frontend: str = "http://localhost:3000", base_url_backend: str = "http://localhost:8000") -> Dict[str, Any]:
+    async def execute_combined_mhmd_swagger_workflow(self, workflow_input: Optional[MHMDWorkflowInput] = None, base_url_frontend: str = "http://localhost:3000", base_url_backend: str = "http://localhost:8000") -> Dict[str, Any]:
         """Execute combined workflow: create test user via MHMD preferences and verify via Swagger UI"""
         combined_results = []
         all_screenshots = []
@@ -293,21 +293,37 @@ class BrowserAutomationService:
             # Step 1: Execute MHMD workflow to create test user
             combined_results.append("🔄 Starting MHMD workflow to create test user...")
             
-            # Generate test user data
-            import random
-            import string
-            random_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
-            test_name = f"Test User {random_id}"
-            test_email = f"testuser_{random_id}@example.com"
-            test_preference = random.choice([MHMDPreference.OPT_IN, MHMDPreference.OPT_OUT])
-            
-            workflow_input = MHMDWorkflowInput(
-                name=test_name,
-                email=test_email,
-                preference=test_preference
-            )
+            # Use provided workflow input or generate test user data
+            if workflow_input is None:
+                random_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+                test_name = f"Test User {random_id}"
+                test_email = f"testuser_{random_id}@example.com"
+                test_preference = random.choice([MHMDPreference.OPT_IN, MHMDPreference.OPT_OUT])
+                
+                workflow_input = MHMDWorkflowInput(
+                    name=test_name,
+                    email=test_email,
+                    preference=test_preference
+                )
+            else:
+                # Use provided input, but ensure we have values for the workflow
+                if not workflow_input.name:
+                    random_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+                    workflow_input.name = f"Test User {random_id}"
+                
+                if not workflow_input.email:
+                    random_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+                    workflow_input.email = f"testuser_{random_id}@example.com"
+                
+                if not workflow_input.preference:
+                    workflow_input.preference = random.choice([MHMDPreference.OPT_IN, MHMDPreference.OPT_OUT])
             
             mhmd_result = await self.execute_mhmd_toggle_workflow(workflow_input, base_url_frontend)
+            
+            # Extract actual values used in the workflow
+            test_name = workflow_input.name
+            test_email = workflow_input.email
+            test_preference = workflow_input.preference
             combined_results.extend([f"📋 MHMD Workflow: {step}" for step in mhmd_result.get('workflow_steps', [])])
             
             # Capture MHMD screenshot
@@ -322,10 +338,10 @@ class BrowserAutomationService:
             if not mhmd_result.get('success'):
                 raise Exception(f"MHMD workflow failed: {mhmd_result.get('message', 'Unknown error')}")
 
-            # Step 2: Execute Swagger API test workflow
+            # Step 2: Execute Swagger API test workflow (skip user creation since we already created one)
             combined_results.append("🔄 Starting Swagger UI API test workflow...")
             
-            swagger_result = await self.execute_swagger_api_test_workflow(base_url_backend)
+            swagger_result = await self.execute_swagger_ui_only_workflow(base_url_backend)
             combined_results.extend([f"📋 Swagger Workflow: {step}" for step in swagger_result.get('workflow_steps', [])])
             
             # Capture Swagger screenshot
@@ -407,6 +423,140 @@ class BrowserAutomationService:
                 "message": f"Combined workflow failed: {str(e)}",
                 "workflow_steps": combined_results,
                 "screenshots": error_screenshots,
+                "error": str(e)
+            }
+        finally:
+            if page and not page.is_closed():
+                await page.close()
+
+    async def execute_swagger_ui_only_workflow(self, base_url: str = "http://localhost:8000") -> Dict[str, Any]:
+        """Execute only the Swagger UI testing part without creating a new test user"""
+        workflow_results = []
+        screenshot_b64 = None
+        page = None
+        try:
+            if not self.browser or not self.browser.is_connected():
+                raise Exception("Browser not initialized or closed. Please ensure the service is running.")
+
+            page = await self.browser.new_page()
+            await page.set_viewport_size({"width": 1280, "height": 720})
+
+            # Step 1: Navigate to Swagger UI docs (skip user creation)
+            swagger_url = f"{base_url}/docs"
+            await page.goto(swagger_url, wait_until="networkidle")
+            workflow_results.append(f"📍 Navigated to Swagger UI: {swagger_url}")
+
+            # Wait for Swagger UI to load
+            await page.wait_for_selector('.swagger-ui', timeout=10000)
+            workflow_results.append("🔄 Swagger UI loaded successfully")
+
+            # Step 2: Find and expand the GET /api/user endpoint
+            get_user_endpoint = page.locator('span:has-text("GET") + span:has-text("/api/user")')
+            await get_user_endpoint.first.click()
+            workflow_results.append("🔍 Expanded GET /api/user endpoint")
+            
+            await asyncio.sleep(1)
+
+            # Step 3: Click "Try it out" button
+            try_it_button = page.locator('button:has-text("Try it out")')
+            await try_it_button.first.click()
+            workflow_results.append("🎯 Clicked 'Try it out' button")
+            
+            await asyncio.sleep(1)
+
+            # Step 4: Click "Execute" button to test the API
+            execute_button = page.locator('button:has-text("Execute")')
+            await execute_button.first.click()
+            workflow_results.append("⚡ Executed GET /api/user API call")
+            
+            await asyncio.sleep(2)
+
+            # Step 5: Wait for and capture the response
+            response_section = page.locator('.responses-wrapper')
+            await response_section.wait_for(timeout=5000)
+            
+            # Check for successful response
+            response_code = await page.locator('.response .response-col_status').first.text_content()
+            workflow_results.append(f"📊 API Response Status: {response_code}")
+            
+            # Get response body
+            try:
+                response_body = await page.locator('.response-col_description pre').first.text_content()
+                workflow_results.append(f"📄 Response Body Preview: {response_body[:200]}...")
+            except:
+                workflow_results.append("📄 Response body captured (details in screenshot)")
+
+            # Step 6: Take screenshot of the complete workflow
+            screenshot_b64 = await self.take_screenshot(page)
+            workflow_results.append("📸 Screenshot captured of Swagger UI API test")
+
+            # Step 7: Verify the user data in database one more time
+            final_verification = await self.get_current_mhmd_preference()
+            workflow_results.append(f"🗄️ Final DB verification: {final_verification}")
+
+            # Step 8: Save screenshot to file
+            screenshot_file_path = ""
+            if screenshot_b64:
+                screenshot_file_path = self._save_screenshot_to_file(screenshot_b64, "swagger_ui_only")
+                if screenshot_file_path:
+                    workflow_results.append(f"💾 Screenshot saved to: {screenshot_file_path}")
+
+            # Step 9: Save verification data to file
+            verification_data = {
+                "api_response_status": response_code,
+                "database_verification": final_verification,
+                "workflow_success": True,
+                "note": "Swagger UI only workflow - no new user created"
+            }
+            verification_file_path = self._save_verification_to_file(verification_data, "swagger_ui_only")
+            if verification_file_path:
+                workflow_results.append(f"💾 Verification data saved to: {verification_file_path}")
+
+            return {
+                "success": True,
+                "message": "Swagger UI only workflow completed successfully",
+                "workflow_steps": workflow_results,
+                "screenshot": screenshot_b64,
+                "screenshot_file_path": screenshot_file_path,
+                "api_response_status": response_code,
+                "database_verification": final_verification,
+                "verification_file_path": verification_file_path
+            }
+
+        except Exception as e:
+            workflow_results.append(f"❌ Error: {str(e)}")
+            screenshot_file_path = ""
+            verification_file_path = ""
+            
+            if page and not page.is_closed():
+                try:
+                    screenshot_b64 = await self.take_screenshot(page)
+                    workflow_results.append("📸 Error screenshot captured")
+                    
+                    screenshot_file_path = self._save_screenshot_to_file(screenshot_b64, "swagger_ui_only_error")
+                    if screenshot_file_path:
+                        workflow_results.append(f"💾 Error screenshot saved to: {screenshot_file_path}")
+                        
+                except Exception as screen_e:
+                    workflow_results.append(f"📸 Screenshot failed on error: {screen_e}")
+            
+            # Save error verification data
+            error_verification = {
+                "success": False,
+                "error": str(e),
+                "workflow_steps": workflow_results
+            }
+            verification_file_path = self._save_verification_to_file(error_verification, "swagger_ui_only_error")
+            if verification_file_path:
+                workflow_results.append(f"💾 Error verification saved to: {verification_file_path}")
+            
+            return {
+                "success": False,
+                "message": f"Swagger UI only workflow failed: {str(e)}",
+                "workflow_steps": workflow_results,
+                "screenshot": screenshot_b64,
+                "screenshot_file_path": screenshot_file_path,
+                "verification_file_path": verification_file_path,
                 "error": str(e)
             }
         finally:
@@ -719,15 +869,19 @@ Analyze the command and respond with ONLY a valid JSON object containing:
 - preference: string or null (OPT_IN or OPT_OUT if specified, null if not)
 
 Workflow Detection Rules:
-- "mhmd_only": Commands about preferences, toggling MHMD, visiting preferences page
-- "swagger_only": Commands about API testing, Swagger UI, verifying users via API
-- "combined": Commands that mention BOTH creating/adding users AND verifying via Swagger/API
+- "mhmd_only": Commands about preferences, toggling MHMD, visiting preferences page, adding users WITHOUT API/Swagger testing
+- "swagger_only": Commands ONLY about API testing, Swagger UI, verifying existing users via API
+- "combined": Commands that explicitly mention BOTH creating/adding users AND testing/verifying via Swagger/API
+
+IMPORTANT: Only use "combined" or "swagger_only" if the command explicitly mentions API testing, Swagger UI, or API verification. Default to "mhmd_only" for simple user creation or preference changes.
 
 Examples:
 - "Visit preferences add John with random email and opt him in" -> {"workflow_type": "mhmd_only", "name": "John", "email": null, "preference": "OPT_IN"}
+- "Add user Sarah with email sarah@test.com and opt her out" -> {"workflow_type": "mhmd_only", "name": "Sarah", "email": "sarah@test.com", "preference": "OPT_OUT"}
 - "Test the API endpoint via Swagger UI" -> {"workflow_type": "swagger_only", "name": null, "email": null, "preference": null}
-- "Create test user and verify the user was added via swagger UI test" -> {"workflow_type": "combined", "name": null, "email": null, "preference": null}
-- "Add user with random preference and check via API with screenshots" -> {"workflow_type": "combined", "name": null, "email": null, "preference": null}
+- "Create test user and verify via swagger UI" -> {"workflow_type": "combined", "name": null, "email": null, "preference": null}
+- "Add John Doe with john@example.com and test via API" -> {"workflow_type": "combined", "name": "John Doe", "email": "john@example.com", "preference": null}
+- "Toggle preferences for Mike" -> {"workflow_type": "mhmd_only", "name": "Mike", "email": null, "preference": null}
 
 CRITICAL: Respond ONLY with valid JSON. No explanations, no markdown, no extra text."""
 
@@ -767,8 +921,14 @@ CRITICAL: Respond ONLY with valid JSON. No explanations, no markdown, no extra t
                 logger.info(f"Detected workflow type: {workflow_type}")
                 
                 if workflow_type == "combined":
-                    # Execute combined MHMD + Swagger workflow
+                    # Execute combined MHMD + Swagger workflow with parsed input
+                    workflow_input = MHMDWorkflowInput(
+                        name=parsed_data.get("name"),
+                        email=parsed_data.get("email"),
+                        preference=MHMDPreference(parsed_data["preference"]) if parsed_data.get("preference") else None
+                    )
                     workflow_result = await self.execute_combined_mhmd_swagger_workflow(
+                        workflow_input=workflow_input,
                         base_url_frontend=base_url,
                         base_url_backend="http://localhost:8000"
                     )
@@ -811,4 +971,4 @@ CRITICAL: Respond ONLY with valid JSON. No explanations, no markdown, no extra t
             }
 
 # Resolve the forward reference for the service field in MHMDWorkflowTool
-MHMDWorkflowTool.update_forward_refs(BrowserAutomationService=BrowserAutomationService)
+MHMDWorkflowTool.model_rebuild()
