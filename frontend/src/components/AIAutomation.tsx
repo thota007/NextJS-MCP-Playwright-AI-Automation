@@ -6,6 +6,8 @@ import { apiService, AICommandResponse } from '@/lib/api';
 export default function AIAutomation() {
   const [command, setCommand] = useState('');
   const [loading, setLoading] = useState(false);
+  const [mhmdLoading, setMhmdLoading] = useState(false);
+  const [swaggerLoading, setSwaggerLoading] = useState(false);
   const [result, setResult] = useState<AICommandResponse | null>(null);
 
   const handleExecuteCommand = async () => {
@@ -49,7 +51,7 @@ export default function AIAutomation() {
   };
 
   const handleMHMDToggle = async () => {
-    setLoading(true);
+    setMhmdLoading(true);
     setResult(null);
 
     try {
@@ -76,7 +78,41 @@ export default function AIAutomation() {
         error: String(error)
       });
     } finally {
-      setLoading(false);
+      setMhmdLoading(false);
+    }
+  };
+
+  const handleSwaggerAPITest = async () => {
+    setSwaggerLoading(true);
+    setResult(null);
+
+    try {
+      // Use MCP server for Swagger API test workflow
+      const response = await apiService.callMCPMethod({
+        method: 'swagger_api_test_workflow',
+        params: { 
+          base_url: 'http://localhost:8000'
+        }
+      });
+      
+      // Convert MCP response to AICommandResponse format - preserve full details
+      const aiResponse: AICommandResponse = {
+        success: response.success,
+        message: response.success 
+          ? (Array.isArray(response.data) && response.data[0]?.text ? response.data[0].text : 'Swagger API test executed')
+          : (response.error || 'Swagger API test failed'),
+        error: response.error
+      };
+      
+      setResult(aiResponse);
+    } catch (error) {
+      setResult({
+        success: false,
+        message: `Failed to execute Swagger API test: ${error}`,
+        error: String(error)
+      });
+    } finally {
+      setSwaggerLoading(false);
     }
   };
 
@@ -98,19 +134,35 @@ export default function AIAutomation() {
 
 
 
-        {/* Quick Action Button */}
+        {/* Quick Action Buttons */}
         <div className="mb-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-3">Quick Actions</h3>
-          <button
-            onClick={handleMHMDToggle}
-            disabled={loading}
-            className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? '🔄 Executing...' : '🎯 Execute MHMD Toggle Workflow'}
-          </button>
-          <p className="text-sm text-gray-500 mt-2">
-            Automatically visit preferences, toggle MHMD setting, save to database, and capture screenshot
-          </p>
+          <div className="space-y-4">
+            <div>
+              <button
+                onClick={handleMHMDToggle}
+                disabled={mhmdLoading || swaggerLoading || loading}
+                className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mr-4"
+              >
+                {mhmdLoading ? '🔄 Executing...' : '🎯 Execute MHMD Toggle Workflow'}
+              </button>
+              <p className="text-sm text-gray-500 mt-2">
+                Automatically visit preferences, toggle MHMD setting, save to database, and capture screenshot
+              </p>
+            </div>
+            <div>
+              <button
+                onClick={handleSwaggerAPITest}
+                disabled={mhmdLoading || swaggerLoading || loading}
+                className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {swaggerLoading ? '🔄 Executing...' : '🔧 Execute Swagger API Test Workflow'}
+              </button>
+              <p className="text-sm text-gray-500 mt-2">
+                Create test user with random MHMD preference and verify through Swagger UI docs
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Custom Command Input */}
@@ -218,7 +270,7 @@ export default function AIAutomation() {
             </div>
           )}
 
-          {/* Screenshot */}
+          {/* Screenshots */}
           {result.screenshot && (
             <div className="mb-4">
               <h4 className="font-semibold text-gray-900 mb-2">Screenshot:</h4>
@@ -228,6 +280,29 @@ export default function AIAutomation() {
                   alt="Automation Screenshot"
                   className="w-full h-auto"
                 />
+              </div>
+            </div>
+          )}
+
+          {/* Multiple Screenshots for Combined Workflows */}
+          {result.screenshots && Array.isArray(result.screenshots) && result.screenshots.length > 0 && (
+            <div className="mb-4">
+              <h4 className="font-semibold text-gray-900 mb-2">Screenshots:</h4>
+              <div className="space-y-4">
+                {result.screenshots.map((screenshot, index) => (
+                  <div key={index} className="border border-gray-200 rounded-md overflow-hidden">
+                    <div className="bg-gray-50 px-3 py-2 border-b border-gray-200">
+                      <h5 className="text-sm font-medium text-gray-700">
+                        {screenshot.description || `Screenshot ${index + 1}`}
+                      </h5>
+                    </div>
+                    <img
+                      src={`data:image/png;base64,${screenshot.screenshot}`}
+                      alt={screenshot.description || `Screenshot ${index + 1}`}
+                      className="w-full h-auto"
+                    />
+                  </div>
+                ))}
               </div>
             </div>
           )}

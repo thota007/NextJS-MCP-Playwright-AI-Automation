@@ -38,11 +38,17 @@ export interface AICommandRequest {
   command: string;
 }
 
+export interface ScreenshotData {
+  screenshot: string;
+  description?: string;
+}
+
 export interface AICommandResponse {
   success: boolean;
   message: string;
   workflow_steps?: string[];
   screenshot?: string;
+  screenshots?: ScreenshotData[];
   final_preference?: string;
   database_verification?: any;
   error?: string;

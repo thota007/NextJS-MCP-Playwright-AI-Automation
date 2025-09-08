@@ -49,6 +49,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="NextJS FastAPI MCP Server", 
     version="1.0.0",
+    description="A FastAPI server with MCP integration and AI browser automation capabilities",
+    docs_url="/docs",
+    redoc_url="/redoc",
     lifespan=lifespan
 )
 
@@ -350,6 +353,33 @@ async def delete_user_data():
             )
         else:
             raise HTTPException(status_code=500, detail="Failed to delete user data")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/user/test", response_model=UserResponse)
+async def create_test_user():
+    """Create a test user with random MHMD preference"""
+    try:
+        import random
+        import string
+        
+        # Generate random test user data
+        random_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+        test_user = UserData(
+            name=f"Test User {random_id}",
+            email=f"testuser_{random_id}@example.com",
+            mhmd_preference=random.choice([MHMDPreference.OPT_IN, MHMDPreference.OPT_OUT])
+        )
+        
+        success = data_service.save_user_data(test_user)
+        if success:
+            return UserResponse(
+                success=True,
+                data=test_user,
+                message=f"Test user created successfully with {test_user.mhmd_preference.value} preference"
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to create test user")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

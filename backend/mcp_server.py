@@ -86,6 +86,21 @@ async def list_tools() -> List[Dict[str, Any]]:
                 },
                 "required": ["url"]
             }
+        },
+        {
+            "name": "swagger_api_test_workflow",
+            "description": "Execute the Swagger UI API testing workflow: creates a test user with random MHMD preference and verifies it through Swagger UI docs by testing the GET /api/user endpoint",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "base_url": {
+                        "type": "string",
+                        "description": "Base URL for the API server (defaults to http://localhost:8000)",
+                        "default": "http://localhost:8000"
+                    }
+                },
+                "required": []
+            }
         }
     ]
     
@@ -225,6 +240,55 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[Dict[str, Any]
                 
         except Exception as e:
             return [{"type": "text", "text": f"Error taking screenshot: {str(e)}"}]
+    
+    elif name == "swagger_api_test_workflow":
+        if not _automation_service:
+            return [{"type": "text", "text": "Error: AI automation service not available"}]
+        
+        try:
+            base_url = arguments.get("base_url", "http://localhost:8000")
+            
+            # Call the automation service directly
+            result = await _automation_service.execute_swagger_api_test_workflow(base_url)
+            
+            # Format the result for MCP response
+            if result.get("success"):
+                response_text = f"✅ Swagger API Test Workflow Completed Successfully!\n"
+                response_text += f"📋 Message: {result.get('message', 'Workflow executed')}\n"
+                
+                if result.get("test_user_data"):
+                    user_data = result["test_user_data"]["data"]
+                    response_text += f"👤 Test User Created: {user_data['name']} ({user_data['email']}) with {user_data['mhmd_preference']} preference\n"
+                
+                if result.get("api_response_status"):
+                    response_text += f"📊 API Response Status: {result['api_response_status']}\n"
+                
+                if result.get("workflow_steps"):
+                    response_text += f"📝 Workflow Steps:\n"
+                    for i, step in enumerate(result['workflow_steps'], 1):
+                        response_text += f"  {i}. {step}\n"
+                
+                if result.get("screenshot"):
+                    response_text += f"📸 Screenshot: Captured successfully (length: {len(result['screenshot'])} chars)\n"
+                
+                if result.get("screenshot_file_path"):
+                    response_text += f"🖼️ Screenshot File: {result['screenshot_file_path']}\n"
+                
+                if result.get("database_verification"):
+                    response_text += f"💾 Database Verification: {result['database_verification']}\n"
+                
+                if result.get("verification_file_path"):
+                    response_text += f"📄 Verification File: {result['verification_file_path']}\n"
+                
+                return [{"type": "text", "text": response_text.strip()}]
+            else:
+                error_text = f"❌ Swagger API test workflow failed: {result.get('message', 'Unknown error')}"
+                if result.get("error"):
+                    error_text += f"\n🔍 Error Details: {result['error']}"
+                return [{"type": "text", "text": error_text}]
+                
+        except Exception as e:
+            return [{"type": "text", "text": f"Error executing Swagger API test workflow: {str(e)}"}]
     
     else:
         return [{"type": "text", "text": f"Error: Unknown tool {name}"}]

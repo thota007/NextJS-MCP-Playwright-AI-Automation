@@ -85,6 +85,10 @@ export default function AIAutomationPage() {
                 <span className="font-medium mr-2">📋</span>
                 <span>Detailed workflow step reporting</span>
               </div>
+              <div className="flex items-center">
+                <span className="font-medium mr-2">🔧</span>
+                <span>Swagger UI API testing automation</span>
+              </div>
             </div>
           </div>
         </div>
