@@ -36,7 +36,7 @@ class MHMDWorkflowTool(BaseTool):
     name: str = "mhmd_workflow_tool"
     description: str = "Executes the MHMD preference workflow. Use this to toggle, opt-in, or opt-out a user. You can optionally provide a name and email. If an email is not provided but is required, a random one will be generated."
     args_schema: type[BaseModel] = MHMDWorkflowInput
-    service: 'BrowserAutomationService'
+    service: Any = None
 
     def _run(self, *args, **kwargs):
         raise NotImplementedError("Use arun for asynchronous execution")
@@ -970,5 +970,4 @@ CRITICAL: Respond ONLY with valid JSON. No explanations, no markdown, no extra t
                 "error": str(e)
             }
 
-# Resolve the forward reference for the service field in MHMDWorkflowTool
-MHMDWorkflowTool.model_rebuild()
+# Forward reference resolution not needed for LangChain BaseTool
